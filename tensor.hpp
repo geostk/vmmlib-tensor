@@ -31,13 +31,13 @@
 #include <algorithm>
 #include <limits>
 
-#include <lapack/f2c.h>
-#include <lapack/clapack.h>
+#include "lapack/f2c.h"
+#include "lapack/clapack.h"
 #include <cblas.h>
 #include <fftw3.h>
 
 #include <omp.h>
-#undef min // Hack to undo the effects of some evil header (http://stackoverflow.com/questions/518517/macro-max-requires-2-arguments-but-only-1-given)
+#undef min // To undo the effects of some evil header (http://stackoverflow.com/questions/518517/macro-max-requires-2-arguments-but-only-1-given)
 #undef max
 
 #define SAFE_ACCESSORS 0
