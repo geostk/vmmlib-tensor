@@ -1590,20 +1590,16 @@ public:
     // Returns matrix with one row per bin and 3 columns: bin start value, bin end value and bin count
     tensor<float> histogram(int n_bins, size_t step = 1) const
     {
-		std::cerr << "FSDFJSKFLJSDKLFJ" << std::endl;
         tensor<float> result(n_bins,3);
         result.set_zero();
         tensor<size_t> bins(n_bins);
         bins.set_zero();        
-        std::cerr << "FSDFJSKFLJSDKLFJ 2" << std::endl;        
         T minVal = minimum();
         T maxVal = maximum();
-        std::cerr << "FSDFJSKFLJSDKLFJ 3" << std::endl;
         for (int i = 0; i < n_bins; ++i) {
             result.at(i,0) = i/float(n_bins)*(maxVal-minVal) + minVal;
             result.at(i,1) = (i+1)/float(n_bins)*(maxVal-minVal) + minVal;
         }
-        std::cerr << "FSDFJSKFLJSDKLFJ 4" << std::endl;
         for (size_t counter = 0; counter < size; counter += step) {
             bins.at(round( double(array[counter]-minVal)/(maxVal-minVal)*(n_bins-1)))++;
         }
