@@ -12,4 +12,3 @@ More details soon...
 
 - [CLAPACK](http://www.netlib.org/clapack/) for eigen- and singular value decompositions
 - [CBLAS](http://www.netlib.org/blas/) for matrix products
-- [FFTW3](http://www.fftw.org/) for the discrete cosine transform

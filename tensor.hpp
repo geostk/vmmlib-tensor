@@ -33,8 +33,11 @@
 
 #include "lapack/f2c.h"
 #include "lapack/clapack.h"
+extern "C"
+{
 #include <cblas.h>
-#include <fftw3.h>
+}
+//#include <fftw3.h>
 
 #include <omp.h>
 #undef min // To undo the effects of some evil header (http://stackoverflow.com/questions/518517/macro-max-requires-2-arguments-but-only-1-given)
@@ -62,6 +65,24 @@ struct sgemm_params // Used for BLAS operations (matrix-matrix product)
     float_t*        c;
     integer        ldc; //leading dimension of output array matrix right
 };
+
+struct dgemm_params // Used for BLAS operations (matrix-matrix product)
+{
+    CBLAS_ORDER     order;
+    CBLAS_TRANSPOSE trans_a;
+    CBLAS_TRANSPOSE trans_b;
+    integer  		m;
+    integer 		n;
+    integer 		k;
+    double_t		alpha;
+    double_t*       a;
+    integer         lda; //leading dimension of input array matrix left
+    double_t*       b;
+    integer         ldb; //leading dimension of input array matrix right
+    double_t		beta;
+    double_t*       c;
+    integer         ldc; //leading dimension of output array matrix right
+};
     
 struct svd_params // Used for LAPACK operations on singular vectors
 {
@@ -77,6 +98,24 @@ struct svd_params // Used for LAPACK operations on singular vectors
     float_t*        vt;
     integer         ldvt;
     float_t*        work;
+    integer         lwork;
+    integer         info;
+};
+
+struct dsvd_params // Used for LAPACK operations on singular vectors
+{
+    char            jobu;
+    char            jobvt;
+    integer         m;
+    integer         n;
+    double_t*        a;
+    integer         lda;
+    double_t*        s;
+    double_t*        u;
+    integer         ldu;
+    double_t*        vt;
+    integer         ldvt;
+    double_t*        work;
     integer         lwork;
     integer         info;
 };
@@ -105,7 +144,31 @@ struct eigs_params // Used for LAPACK operations on eigenvectors
     integer         info;
 };
 
-template< typename T = float >
+struct deigs_params // Used for LAPACK operations on eigenvectors
+{
+    char            jobz;
+    char            range;
+    char            uplo;
+    integer         n;
+    double_t*        a;
+    integer         lda; //leading dimension of input array
+    double_t*        vl;
+    double_t*        vu;
+    integer         il;
+    integer         iu;
+    double_t         abstol;
+    integer         m; //number of found eigenvalues
+    double_t*        w; //first m eigenvalues
+    double_t*        z; //first m eigenvectors
+    integer         ldz; //leading dimension of z
+    double_t*        work;
+    integer         lwork;
+    integer*        iwork;
+    integer*        ifail;
+    integer         info;
+};
+
+template< typename T = double >
 class tensor
 {
 private:
@@ -587,9 +650,9 @@ public:
     {
         for (size_t counter = 0; counter < size; ++counter)
         {
-            array[counter] = std::max<float>(array[counter],source_left);
-            array[counter] = std::min<float>(array[counter],source_right);
-            array[counter] = (array[counter]-source_left)/float(source_right-source_left)*(target_right-target_left) + target_left;
+            array[counter] = std::max<T>(array[counter],source_left);
+            array[counter] = std::min<T>(array[counter],source_right);
+            array[counter] = (array[counter]-source_left)/T(source_right-source_left)*(target_right-target_left) + target_left;
         }
     }
     
@@ -726,19 +789,19 @@ public:
     {
         assert(n_dims == 3);
 
-        tensor<float> result(d[0],d[1],d[2]);
+        tensor<T> result(d[0],d[1],d[2]);
         result.set_zero();
         
-        tensor<float> h(3), h_prima(3);
+        tensor<T> h(3), h_prima(3);
         h.at(0) = 1; h.at(1) = 2; h.at(2) = 1;
         h_prima.at(0) = 1; h_prima.at(1) = 0; h_prima.at(2) = -1;
         
-        tensor<float> partial_sum(d[0],d[1],d[2]);
-        tensor<float> sobel(3,3,3);
-        tensor<float> lambdas(1);
+        tensor<T> partial_sum(d[0],d[1],d[2]);
+        tensor<T> sobel(3,3,3);
+        tensor<T> lambdas(1);
         lambdas.at(0) = 1;
         
-        tensor<float> U1(3,1), U2(3,1), U3(3,1);
+        tensor<T> U1(3,1), U2(3,1), U3(3,1);
         
         U1.set_sub_tensor(h_prima,0,0); U2.set_sub_tensor(h,0,0); U3.set_sub_tensor(h,0,0);
         sobel.reconstruct_cp(lambdas,U1,U2,U3);
@@ -762,14 +825,14 @@ public:
         return result;
     }
     
-    // Columnwise 1D DCT. See http://octave.1599824.n4.nabble.com/How-to-use-FFTW3-DCT-IDCT-to-match-that-of-Octave-td4633005.html
+    /*// Columnwise 1D DCT. See http://octave.1599824.n4.nabble.com/How-to-use-FFTW3-DCT-IDCT-to-match-that-of-Octave-td4633005.html
     // TODO only works for float
     void dct() // GENERIC (1-3D)
     {
         float *in = (float*)fftwf_malloc(sizeof(float) * d[0]);    
         float *out = (float*)fftwf_malloc(sizeof(float) * d[0]);
 
-        /* create plan */
+        // create plan
         fftwf_plan p = fftwf_plan_r2r_1d(d[0], in, out, FFTW_REDFT10, FFTW_MEASURE);
                 
         for (size_t slice = 0; slice < d[2]; ++slice) {
@@ -780,7 +843,7 @@ public:
                     in[row] = at(row,col,slice);
                 }
                 
-                /* execute plan */
+                // execute plan
                 fftwf_execute(p);
 
                 // Retrieve buffer contents, rescaling
@@ -791,7 +854,7 @@ public:
             }
         }
 
-        /* free resources */
+        // free resources
         fftwf_destroy_plan(p);
         fftwf_free(in);
         fftwf_free(out);
@@ -804,7 +867,7 @@ public:
         float *in = (float*)fftwf_malloc(sizeof(float) * d[0]);    
         float *out = (float*)fftwf_malloc(sizeof(float) * d[0]);
 
-        /* create plan */
+        // create plan
         fftwf_plan p = fftwf_plan_r2r_1d(d[0], in, out, FFTW_REDFT01, FFTW_ESTIMATE);
 
         for (size_t slice = 0; slice < d[2]; ++slice) {
@@ -816,7 +879,7 @@ public:
                     in[row] = at(row,col,slice)/(sqrt(2)/4);
                 }
 
-                /* execute plan */
+                // execute plan
                 fftwf_execute(p);
 
                 // Retrieve buffer contents, rescaling
@@ -829,7 +892,7 @@ public:
         fftwf_destroy_plan(p);
         fftwf_free(in);
         fftwf_free(out);
-    }
+    }*/
     
     // GENERIC (1-3D)
     template< typename TT >
@@ -872,7 +935,7 @@ public:
     {
         assert(n_dims == 3);
         
-        tensor<float> result;
+        tensor<T> result;
         result.init(n_dims,d[0],d[1],d[2]);
         result.set_zero(); // TODO needed?
         
@@ -989,7 +1052,7 @@ public:
     bool symmetric_eigenvectors(tensor<float>& U) const // TODO: only works for T = float
     {
         assert(n_dims == 2);
-        assert(is_symmetric());
+//        assert(is_symmetric());
         assert(d[0] == U.d[0]);
         assert(d[1] >= U.d[1]);
         
@@ -1055,8 +1118,80 @@ public:
 
         return p.info == 0;
     }
+
+    // Sets U to the leading eigenvectors of the current matrix
+    bool symmetric_eigenvectors(tensor<double>& U) const
+    {
+        assert(n_dims == 2);
+//        assert(is_symmetric());
+        assert(d[0] == U.d[0]);
+        assert(d[1] >= U.d[1]);
+
+        // (1) get all eigenvalues and eigenvectors
+//        evectors_type* all_eigvectors = new evectors_type;
+//        evalues_type* all_eigvalues = new evalues_type;
+
+        deigs_params p;
+
+        // Workspace query (used to know the necessary buffer size)
+        p.jobz      = 'V'; // Compute eigenvalues and eigenvectors.
+        p.range     = 'I'; // the U.d[1] most significant eigenvectors will be found
+        p.uplo      = 'U'; // Upper triangle of A is stored; or Lower triangle of A is stored.
+        p.n         = d[0];
+        p.a         = NULL; // Empty (workspace query)
+        p.lda       = d[0];
+        p.vl        = 0; //Not referenced if RANGE = 'A' or 'I'.
+        p.vu        = 0; //Not referenced if RANGE = 'A' or 'I'.
+        p.il        = d[1]-U.d[1]+1; //Not referenced if RANGE = 'A' or 'V'.
+        p.iu        = d[1]; //Not referenced if RANGE = 'A' or 'V'.
+//        p.abstol    = 0.000001; //lie in an interval [a,b] of width less than or equal to ABSTOL + EPS *   max( |a|,|b| )
+        p.abstol    = 1e-24;
+        p.m         = U.d[1]; //The total number of eigenvalues found.  0 <= M <= N.
+        p.w         = NULL; // Empty (workspace query)
+        p.z         = NULL; // Empty (workspace query)
+        p.ldz       = d[0]; // The leading dimension of the array Z.  LDZ >= 1, and if JOBZ = 'V', LDZ >= max(1,N).
+        p.work      = new double_t;
+        //FIXME: check if correct datatype
+        p.iwork     = new integer[5*d[0]]; //[5*N]; // INTEGER array, dimension (5*N)
+        p.ifail     = new integer[d[0]]; //[N];
+        p.lwork     = -1; //8N
+
+        dsyevx_(&p.jobz,&p.range,&p.uplo,&p.n,p.a,&p.lda,p.vl,p.vu,&p.il,&p.iu,&p.abstol,&p.m,p.w,p.z,&p.ldz,p.work,&p.lwork,p.iwork,p.ifail,&p.info);
+
+        p.lwork = static_cast< integer >( p.work[0] );
+        delete p.work;
+
+        p.work = new double_t[ p.lwork ];
+
+        // Real query
+        p.a = new T[size]; // Input matrix
+        memcpy(p.a,array,size*sizeof(T));
+        p.w = new T[size]; // First m eigenvalues
+        p.z = U.array; // First m eigenvectors
+
+        dsyevx_(&p.jobz,&p.range,&p.uplo,&p.n,p.a,&p.lda,p.vl,p.vu,&p.il,&p.iu,&p.abstol,&p.m,p.w,p.z,&p.ldz,p.work,&p.lwork,p.iwork,p.ifail,&p.info);
+
+        // The eigenvectors are sorted in ascending order. We change the order now
+//        tensor<T> tmp(d[0]);
+//        U.get_sub_tensor(tmp,0,0);
+        for (size_t col = 0; col < U.d[1]/2; ++col) {
+            for (size_t row = 0; row < U.d[0]; ++row) {
+                T tmp = U.at(row,col);
+                U.at(row,col) = U.at(row,U.d[1]-col-1);
+                U.at(row,U.d[1]-col-1) = tmp;
+            }
+        }
+
+        delete p.work;
+        delete p.iwork;
+        delete p.ifail;
+        delete p.a;
+        delete p.w;
+
+        return p.info == 0;
+    }
     
-    const void tucker_decomposition(tensor<T>& core, tensor<T>& U1, tensor<T>& U2, tensor<T>& U3, size_t max_iters = 3, double tol = 1e-3) const // NON-GENERIC (3D)
+    const void tucker_decomposition(tensor<T>& core, tensor<T>& U1, tensor<T>& U2, tensor<T>& U3, size_t max_iters = 3, double tol = 1e-3, bool verbose = true) const // NON-GENERIC (3D)
     {
         assert(n_dims == 3);
         assert(core.n_dims == 3);
@@ -1073,20 +1208,20 @@ public:
         assert(core.d[1] == U2.d[1]);
         assert(core.d[2] == U3.d[1]);
         
-        double error_old = std::numeric_limits<double>::max();
+        double error_old = 1;
         double error = 0;
         
         // TODO preallocate like this?
-        tensor<float> unfolding1(d[0],core.d[1]*core.d[2]);
-        tensor<float> unfolding2(d[1],core.d[0]*core.d[2]);
-        tensor<float> unfolding3(d[2],core.d[0]*core.d[1]);
+        tensor<T> unfolding1(d[0],core.d[1]*core.d[2]);
+        tensor<T> unfolding2(d[1],core.d[0]*core.d[2]);
+        tensor<T> unfolding3(d[2],core.d[0]*core.d[1]);
         
         double target_frobenius_norm = frobenius_norm();
-        
+
         for (size_t iteration = 0; iteration < max_iters and abs(error_old - error) > tol; ++iteration) {
 
             error_old = error;
-            
+
             tensor<T> projection = ttm2(U2.transpose()).ttm3(U3.transpose());
             for (size_t slice = 0; slice < projection.d[2]; ++slice) {
                 for (size_t col = 0; col < projection.d[1]; ++col) {
@@ -1106,7 +1241,7 @@ public:
                 }
             }
             unfolding2.covariance().symmetric_eigenvectors(U2);
-            
+
             projection = ttm1(U1.transpose()).ttm2(U2.transpose());
             for (size_t slice = 0; slice < projection.d[2]; ++slice) {
                 for (size_t col = 0; col < projection.d[1]; ++col) {
@@ -1120,7 +1255,7 @@ public:
             core = projection.ttm3(U3.transpose());
             double achieved_frobenius_norm = core.frobenius_norm();
             error = sqrt(std::max<double>(0,target_frobenius_norm*target_frobenius_norm - achieved_frobenius_norm*achieved_frobenius_norm))/target_frobenius_norm;
-            std::cout << "Iteration = " << iteration+1 << ", error = " << error << std::endl;
+            if (verbose) std::cout << "Iteration = " << iteration+1 << ", error = " << error << std::endl;
         }
     }
 /******************************************************************************/
@@ -1169,15 +1304,15 @@ public:
     }
     
     // Regular matrix times matrix product. Also vectors are supported
-    tensor<T> mtm(const tensor<T>& factor) const
+    tensor<double> mtm(const tensor<double>& factor) const
     {
         assert(n_dims <= 2);
         assert(factor.n_dims <= 2);
         assert(d[1] == factor.d[0]);
         
-        tensor<T> result(d[0],factor.d[1]);
+        tensor<double> result(d[0],factor.d[1]);
         
-        sgemm_params p;
+        dgemm_params p;
         
         p.order      = CblasColMajor; //
 		p.trans_a    = CblasNoTrans;
@@ -1195,51 +1330,87 @@ public:
 		p.ldc        = d[0];
         
         // blas needs non-const data
-        tensor<T> A_copy(*this);
-        tensor<T> B_copy(factor);
+        tensor<double> A_copy(*this);
+        tensor<double> B_copy(factor);
 		
 		p.a         = A_copy.get_array();
 		p.b         = B_copy.get_array();
 		p.c         = result.get_array();
 		
-		cblas_sgemm(p.order,p.trans_a,p.trans_b,p.m,p.n,p.k,p.alpha,p.a,p.lda,p.b,p.ldb,p.beta,p.c,p.ldc);
+        cblas_dgemm(p.order,p.trans_a,p.trans_b,p.m,p.n,p.k,p.alpha,p.a,p.lda,p.b,p.ldb,p.beta,p.c,p.ldc);
         
         return result;
     }
     
+//    // Returns A*A^T
+//    tensor<float> covariance() const
+//    {
+//        assert(n_dims == 2);
+        
+//        tensor<T> result(d[0],d[0]);
+        
+//        sgemm_params p;
+        
+//        p.order      = CblasColMajor; //
+//		p.trans_a    = CblasNoTrans;
+//		p.trans_b    = CblasTrans;
+//		p.m          = d[0];
+//		p.n          = d[0];
+//		p.k          = d[1];
+//		p.alpha      = 1;
+//		p.a          = 0;
+//		p.lda        = d[0];
+//		p.b          = 0;
+//		p.ldb        = d[0];
+//		p.beta       = 0;
+//		p.c          = 0;
+//		p.ldc        = d[0];
+        
+//        // blas needs non-const data
+//        tensor<T> A_copy(*this);
+		
+//		p.a         = A_copy.get_array();
+//		p.b         = A_copy.get_array();
+//		p.c         = result.get_array();
+		
+//		cblas_sgemm(p.order,p.trans_a,p.trans_b,p.m,p.n,p.k,p.alpha,p.a,p.lda,p.b,p.ldb,p.beta,p.c,p.ldc);
+        
+//        return result;
+//    }
+
     // Returns A*A^T
-    tensor<T> covariance() const
+    tensor<double> covariance() const
     {
         assert(n_dims == 2);
-        
-        tensor<T> result(d[0],d[0]);
-        
-        sgemm_params p;
-        
-        p.order      = CblasColMajor; //
-		p.trans_a    = CblasNoTrans;
-		p.trans_b    = CblasTrans;
-		p.m          = d[0];
-		p.n          = d[0];
-		p.k          = d[1];
-		p.alpha      = 1;
-		p.a          = 0;
-		p.lda        = d[0];
-		p.b          = 0;
-		p.ldb        = d[0];
-		p.beta       = 0;
-		p.c          = 0;
-		p.ldc        = d[0];
-        
+
+        tensor<double> result(d[0],d[0]);
+
+        dgemm_params p;
+
+        p.order      = CblasColMajor;
+        p.trans_a    = CblasNoTrans;
+        p.trans_b    = CblasTrans;
+        p.m          = d[0];
+        p.n          = d[0];
+        p.k          = d[1];
+        p.alpha      = 1;
+        p.a          = 0;
+        p.lda        = d[0];
+        p.b          = 0;
+        p.ldb        = d[0];
+        p.beta       = 0;
+        p.c          = 0;
+        p.ldc        = d[0];
+
         // blas needs non-const data
-        tensor<T> A_copy(*this);
-		
-		p.a         = A_copy.get_array();
-		p.b         = A_copy.get_array();
-		p.c         = result.get_array();
-		
-		cblas_sgemm(p.order,p.trans_a,p.trans_b,p.m,p.n,p.k,p.alpha,p.a,p.lda,p.b,p.ldb,p.beta,p.c,p.ldc);
-        
+        tensor<double> A_copy(*this);
+
+        p.a         = A_copy.get_array();
+        p.b         = A_copy.get_array();
+        p.c         = result.get_array();
+
+        cblas_dgemm(p.order,p.trans_a,p.trans_b,p.m,p.n,p.k,p.alpha,p.a,p.lda,p.b,p.ldb,p.beta,p.c,p.ldc);
+
         return result;
     }
     
@@ -1289,10 +1460,10 @@ public:
         #pragma omp parallel for
         for (size_t slice = 0; slice < d[2]; ++slice)
         {
-            tensor<float> factor(d[0],d[1],1);
+            tensor<T> factor(d[0],d[1],1);
             get_sub_tensor(factor,0,0,slice);
             factor.unembed(2);
-            tensor<float> product = matrix.mtm(factor);
+            tensor<T> product = matrix.mtm(factor);
             product.embed(2);
             result.set_sub_tensor(product,0,0,slice);
         }
@@ -1310,10 +1481,10 @@ public:
         #pragma omp parallel for
         for (size_t row = 0; row < d[0]; ++row)
         {            
-            tensor<float> factor(1,d[1],d[2]);
+            tensor<T> factor(1,d[1],d[2]);
             get_sub_tensor(factor,row,0,0);
             factor.unembed(0);
-            tensor<float> product = matrix.mtm(factor);
+            tensor<T> product = matrix.mtm(factor);
             product.embed(0);
             result.set_sub_tensor(product,row,0,0);
         }
@@ -1331,11 +1502,11 @@ public:
         #pragma omp parallel for
         for (size_t col = 0; col < d[1]; ++col)
         {
-            tensor<float> factor(d[0],1,d[2]);
+            tensor<T> factor(d[0],1,d[2]);
             get_sub_tensor(factor,0,col,0);
             factor.unembed(1);
             factor = factor.transpose();
-            tensor<float> product = matrix.mtm(factor);
+            tensor<T> product = matrix.mtm(factor);
             product = product.transpose();
             product.embed(1);
             result.set_sub_tensor(product,0,col,0);
@@ -1471,7 +1642,7 @@ public:
             std::cerr << array[i];
         }
         std::cerr << "... | Sum = " << sum() << ", L2 norm = " << frobenius_norm();
-        std::cerr << " | Max = " << maximum() << ", min = " << minimum() << std::endl;
+        std::cerr << " | Min = " << minimum() << ", max = " << maximum() << std::endl;
     }
 /******************************************************************************/
 
@@ -1549,7 +1720,7 @@ public:
     {
         T result = std::numeric_limits<T>::min();
         for (size_t counter = 0; counter < size; ++counter) {
-            result = std::max<float>(result,array[counter]);
+            result = std::max<T>(result,array[counter]);
         }
         return result;
     }
@@ -1558,7 +1729,7 @@ public:
     {
         T result = std::numeric_limits<T>::max();
         for (size_t counter = 0; counter < size; ++counter) {
-            result = std::min<float>(result,array[counter]);
+            result = std::min<T>(result,array[counter]);
         }
         return result;
     }
@@ -1618,3 +1789,5 @@ public:
 }
 
 #endif
+
+
