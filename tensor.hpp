@@ -1110,11 +1110,11 @@ public:
             }
         }
         
-        delete p.work;
-        delete p.iwork;
-        delete p.ifail;
-        delete p.a;
-        delete p.w;
+        delete[] p.work;
+        delete[] p.iwork;
+        delete[] p.ifail;
+        delete[] p.a;
+        delete[] p.w;
 
         return p.info == 0;
     }
@@ -1182,11 +1182,11 @@ public:
             }
         }
 
-        delete p.work;
-        delete p.iwork;
-        delete p.ifail;
-        delete p.a;
-        delete p.w;
+        delete[] p.work;
+        delete[] p.iwork;
+        delete[] p.ifail;
+        delete[] p.a;
+        delete[] p.w;
 
         return p.info == 0;
     }
@@ -1630,19 +1630,19 @@ public:
     // Display a short fingerprint of the tensor
     void debug() const
     {
-        std::cerr << "Size: ";
+        std::cout << "Size: ";
         for (size_t dim = 0; dim < n_dims; ++dim) {
             if (dim > 0) std::cerr << " x ";
             std::cerr << d[dim]; 
         }
-        std::cerr << " | First elements: ";
+        std::cout << " | First elements: ";
         for (size_t i = 0; i < std::min<size_t>(3,size); ++i) {
             if (i > 0)
                 std::cerr << ", ";
-            std::cerr << array[i];
+            std::cout << array[i];
         }
-        std::cerr << "... | Sum = " << sum() << ", L2 norm = " << frobenius_norm();
-        std::cerr << " | Min = " << minimum() << ", max = " << maximum() << std::endl;
+        std::cout << "... | Sum = " << sum() << ", L2 norm = " << frobenius_norm();
+        std::cout << " | Min = " << minimum() << ", max = " << maximum() << std::endl;
     }
 /******************************************************************************/
 
